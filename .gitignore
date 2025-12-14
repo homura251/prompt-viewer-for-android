@@ -12,6 +12,9 @@ Thumbs.db
 **/.pytest_cache/
 **/.venv/
 
+# Vendored python repo artifacts (large binaries)
+comfyui-workflow-prompt-viewer/whl/
+
 # Gradle / Kotlin
 **/.gradle/
 **/build/
