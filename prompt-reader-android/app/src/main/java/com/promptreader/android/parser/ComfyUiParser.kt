@@ -29,7 +29,8 @@ object ComfyUiParser {
     )
 
     fun parseWorkflow(workflowText: String): Result {
-        val workflow = (runCatching { JSONTokener(workflowText).nextValue() }.getOrNull() as? JSONObject) ?: JSONObject()
+        val normalized = normalizeWorkflowText(workflowText)
+        val workflow = (runCatching { JSONTokener(normalized).nextValue() }.getOrNull() as? JSONObject) ?: JSONObject()
         val nodes = workflow.optJSONArray("nodes") ?: JSONArray()
 
         val extracted = extractFromWorkflowNodes(nodes)
@@ -41,7 +42,7 @@ object ComfyUiParser {
         val rawParts = mutableListOf<String>()
         if (extracted.positive.isNotBlank()) rawParts += extracted.positive
         if (extracted.negative.isNotBlank()) rawParts += extracted.negative
-        rawParts += workflowText.trim()
+        rawParts += normalized.trim()
 
         return Result(
             positive = extracted.positive,
@@ -176,7 +177,8 @@ object ComfyUiParser {
     )
 
     private fun extractFromWorkflow(workflowText: String): WorkflowExtract {
-        val workflow = runCatching { JSONTokener(workflowText).nextValue() }.getOrNull() as? JSONObject
+        val normalized = normalizeWorkflowText(workflowText)
+        val workflow = runCatching { JSONTokener(normalized).nextValue() }.getOrNull() as? JSONObject
             ?: return WorkflowExtract("", "", "", null)
         val nodes = workflow.optJSONArray("nodes") ?: return WorkflowExtract("", "", "", null)
         val extracted = extractFromWorkflowNodes(nodes)
@@ -289,6 +291,15 @@ object ComfyUiParser {
 
         if (meta.length() > 0) detail.put("workflow_meta", meta)
         return detail.toString(2)
+    }
+
+    private fun normalizeWorkflowText(text: String): String {
+        val trimmed = text.trimStart()
+        if (trimmed.startsWith("null")) {
+            val idx = trimmed.indexOf('{')
+            if (idx >= 0) return trimmed.substring(idx)
+        }
+        return trimmed
     }
 
     private fun extractModelName(

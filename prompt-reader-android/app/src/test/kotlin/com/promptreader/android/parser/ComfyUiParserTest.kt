@@ -32,7 +32,7 @@ class ComfyUiParserTest {
     @Test
     fun `parses workflow-only via SDPromptReader`() {
         val workflow = Fixtures.read("fixtures/comfyui_workflow_prompt_reader.json")
-        val r = ComfyUiParser.parseWorkflow(workflowText = workflow)
+        val r = ComfyUiParser.parseWorkflow(workflowText = "null\n$workflow")
 
         assertEquals("a cute cat, best quality", r.positive)
         assertEquals("blurry, lowres", r.negative)

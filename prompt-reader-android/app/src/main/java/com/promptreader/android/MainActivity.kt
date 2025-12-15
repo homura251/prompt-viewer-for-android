@@ -13,6 +13,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -22,13 +23,18 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Lightbulb
+import androidx.compose.material.icons.filled.LightMode
+import androidx.compose.material.icons.filled.SettingsBrightness
 import androidx.compose.material.icons.outlined.Lightbulb
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -39,6 +45,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -54,6 +62,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.ImageBitmap
@@ -66,13 +75,21 @@ import com.promptreader.android.parser.SettingEntry
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.math.min
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
         setContent {
-            MaterialTheme {
+            val prefs = remember { ThemePrefs(this@MainActivity) }
+            var themeMode by remember { mutableStateOf(prefs.load()) }
+            val colorScheme = when (themeMode) {
+                ThemeMode.Dark -> darkColorScheme()
+                ThemeMode.Light -> lightColorScheme()
+                ThemeMode.System -> if (androidx.compose.foundation.isSystemInDarkTheme()) darkColorScheme() else lightColorScheme()
+            }
+            MaterialTheme(colorScheme = colorScheme) {
                 var selectedUri by remember { mutableStateOf<Uri?>(null) }
                 var tool by remember { mutableStateOf("") }
                 var positive by remember { mutableStateOf("") }
@@ -90,6 +107,7 @@ class MainActivity : ComponentActivity() {
                 var thumbnail by remember { mutableStateOf<ImageBitmap?>(null) }
 
                 val snackbarHostState = remember { SnackbarHostState() }
+                val appScope = rememberCoroutineScope()
 
                 val launcher = rememberLauncherForActivityResult(
                     contract = ActivityResultContracts.OpenDocument(),
@@ -174,6 +192,12 @@ class MainActivity : ComponentActivity() {
                     onTabIndexChange = { tabIndex = it },
                     onPickImage = { launcher.launch(arrayOf("image/*")) },
                     onCopy = { text, label -> copy(text, label) },
+                    themeMode = themeMode,
+                    onThemeModeChange = {
+                        themeMode = it
+                        prefs.save(it)
+                        appScope.launch { snackbarHostState.showSnackbar("主题：${it.label}") }
+                    },
                     snackbarHostState = snackbarHostState,
                 )
             }
@@ -184,6 +208,30 @@ class MainActivity : ComponentActivity() {
 private enum class ViewMode {
     Simple,
     Normal,
+}
+
+private enum class ThemeMode(val label: String) {
+    System("跟随系统"),
+    Light("浅色"),
+    Dark("深色"),
+}
+
+private class ThemePrefs(context: Context) {
+    private val prefs = context.getSharedPreferences("prompt_reader_prefs", Context.MODE_PRIVATE)
+
+    fun load(): ThemeMode {
+        val v = prefs.getString("theme_mode", ThemeMode.System.name) ?: ThemeMode.System.name
+        return runCatching { ThemeMode.valueOf(v) }.getOrDefault(ThemeMode.System)
+    }
+
+    fun save(mode: ThemeMode) {
+        prefs.edit().putString("theme_mode", mode.name).apply()
+    }
+}
+
+private enum class RawViewMode {
+    Chunked,
+    Compact,
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -206,10 +254,13 @@ private fun PromptReaderScreen(
     onTabIndexChange: (Int) -> Unit,
     onPickImage: () -> Unit,
     onCopy: suspend (String, String) -> Unit,
+    themeMode: ThemeMode,
+    onThemeModeChange: (ThemeMode) -> Unit,
     snackbarHostState: SnackbarHostState,
 ) {
     val scrollState = rememberScrollState()
     val scope = rememberCoroutineScope()
+    var rawViewMode by rememberSaveable { mutableStateOf(RawViewMode.Chunked) }
 
     var positiveMode by remember { mutableStateOf(ViewMode.Normal) }
     var negativeMode by remember { mutableStateOf(ViewMode.Normal) }
@@ -233,6 +284,23 @@ private fun PromptReaderScreen(
                     }
                 },
                 actions = {
+                    IconButton(
+                        onClick = {
+                            val next = when (themeMode) {
+                                ThemeMode.System -> ThemeMode.Light
+                                ThemeMode.Light -> ThemeMode.Dark
+                                ThemeMode.Dark -> ThemeMode.System
+                            }
+                            onThemeModeChange(next)
+                        },
+                    ) {
+                        val icon = when (themeMode) {
+                            ThemeMode.System -> Icons.Filled.SettingsBrightness
+                            ThemeMode.Light -> Icons.Filled.LightMode
+                            ThemeMode.Dark -> Icons.Filled.DarkMode
+                        }
+                        Icon(icon, contentDescription = "主题")
+                    }
                     IconButton(onClick = onPickImage) {
                         Icon(Icons.Filled.Image, contentDescription = "选择图片")
                     }
@@ -492,7 +560,11 @@ private fun PromptReaderScreen(
                         }
 
                         else -> {
-                            PromptTextBox(title = title, text = raw, tall = true, maxDisplayChars = 50_000)
+                            RawViewer(
+                                raw = raw,
+                                viewMode = rawViewMode,
+                                onViewModeChange = { rawViewMode = it },
+                            )
                         }
                     }
                 }
@@ -540,6 +612,89 @@ private fun PromptReaderScreen(
                 Text("复制全部（Raw）")
             }
             Spacer(Modifier.height(8.dp))
+        }
+    }
+}
+
+@androidx.compose.runtime.Composable
+private fun RawViewer(
+    raw: String,
+    viewMode: RawViewMode,
+    onViewModeChange: (RawViewMode) -> Unit,
+) {
+    val stats = remember(raw) {
+        val chars = raw.length
+        val lines = raw.count { it == '\n' } + 1
+        chars to lines
+    }
+
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        FilledTonalButton(
+            onClick = { onViewModeChange(RawViewMode.Chunked) },
+            enabled = viewMode != RawViewMode.Chunked,
+        ) {
+            Text("全文")
+        }
+        FilledTonalButton(
+            onClick = { onViewModeChange(RawViewMode.Compact) },
+            enabled = viewMode != RawViewMode.Compact,
+        ) {
+            Text("简洁")
+        }
+        Spacer(Modifier.weight(1f))
+        Text(
+            text = "${stats.first} chars / ${stats.second} lines",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+        )
+    }
+
+    Spacer(Modifier.height(8.dp))
+
+    when (viewMode) {
+        RawViewMode.Compact -> PromptTextBox(title = "Raw", text = raw, tall = true, maxDisplayChars = 50_000)
+        RawViewMode.Chunked -> ChunkedTextViewer(text = raw, heightDp = 320)
+    }
+}
+
+@androidx.compose.runtime.Composable
+private fun ChunkedTextViewer(text: String, heightDp: Int) {
+    val shape = RoundedCornerShape(6.dp)
+    val chunkSize = 2000
+    val chunkCount = remember(text) { if (text.isEmpty()) 0 else (text.length + chunkSize - 1) / chunkSize }
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(heightDp.dp),
+        shape = shape,
+    ) {
+        Box(modifier = Modifier.padding(12.dp)) {
+            if (text.isBlank()) {
+                Text(
+                    text = "（空）",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                return@Box
+            }
+
+            LazyColumn(modifier = Modifier.fillMaxSize()) {
+                items(count = chunkCount, key = { it }) { index ->
+                    val start = index * chunkSize
+                    val end = min(start + chunkSize, text.length)
+                    Text(
+                        text = text.substring(start, end),
+                        style = MaterialTheme.typography.bodySmall,
+                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                }
+            }
         }
     }
 }
