@@ -361,11 +361,14 @@ private fun PromptReaderScreen(
             }
 
             val title = tabTitles[tabIndex]
+            val orderedSettingEntries = remember(setting, settingEntries) {
+                orderSettingEntriesForDisplay(settingEntries.ifEmpty { parseSettingEntriesFromText(setting) })
+            }
             val contentToCopy = when (tabIndex) {
                 0 -> positive
                 1 -> negative
                 2 -> when (paramsMode) {
-                    ViewMode.Simple -> buildSettingCopyText(settingEntries.ifEmpty { parseSettingEntriesFromText(setting) })
+                    ViewMode.Simple -> buildSettingCopyText(orderedSettingEntries)
                     ViewMode.Normal -> (settingDetail.ifBlank { setting }).ifBlank { "" }
                 }
                 else -> raw
@@ -442,11 +445,8 @@ private fun PromptReaderScreen(
                         2 -> {
                             when (paramsMode) {
                                 ViewMode.Simple -> {
-                                    val entries = remember(setting, settingEntries) {
-                                        settingEntries.ifEmpty { parseSettingEntriesFromText(setting) }
-                                    }
-                                    if (entries.isNotEmpty()) {
-                                        entries.forEach { (k, v) ->
+                                    if (orderedSettingEntries.isNotEmpty()) {
+                                        orderedSettingEntries.forEach { (k, v) ->
                                             ListItem(
                                                 headlineContent = { Text(k) },
                                                 supportingContent = { Text(v) },
@@ -612,6 +612,13 @@ private fun parseSettingPairs(setting: String): List<Pair<String, String>> {
 
 private fun parseSettingEntriesFromText(setting: String): List<SettingEntry> {
     return parseSettingPairs(setting).map { SettingEntry(it.first, it.second) }
+}
+
+private fun orderSettingEntriesForDisplay(entries: List<SettingEntry>): List<SettingEntry> {
+    if (entries.isEmpty()) return entries
+    val priorityKeys = setOf("model", "checkpoint", "checkpoint_name", "ckpt_name", "ckpt")
+    val (prioritized, rest) = entries.partition { it.key.trim().lowercase() in priorityKeys }
+    return if (prioritized.isEmpty()) entries else prioritized + rest
 }
 
 private fun buildSettingCopyText(entries: List<SettingEntry>): String {

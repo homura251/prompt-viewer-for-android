@@ -1,0 +1,14 @@
+{
+  "sui_image_params": {
+    "prompt": "a cute cat, best quality",
+    "negativeprompt": "blurry, lowres",
+    "model": "sdxl.safetensors",
+    "steps": 30,
+    "sampler": "euler",
+    "cfgscale": 6.0,
+    "seed": 42,
+    "width": 512,
+    "height": 768,
+    "extra": "some-value"
+  }
+}

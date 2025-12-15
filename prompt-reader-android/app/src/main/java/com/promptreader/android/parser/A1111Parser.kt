@@ -6,6 +6,8 @@ object A1111Parser {
         val negative: String,
         val setting: String,
         val raw: String,
+        val settingEntries: List<SettingEntry> = emptyList(),
+        val settingDetail: String = "",
     )
 
     fun parse(raw: String): Result {
@@ -34,6 +36,32 @@ object A1111Parser {
             }
         }
 
-        return Result(positive, negative, setting, raw.trim())
+        val entries = parseSettingEntries(setting)
+        return Result(
+            positive = positive,
+            negative = negative,
+            setting = setting,
+            raw = raw.trim(),
+            settingEntries = entries,
+            settingDetail = setting,
+        )
+    }
+
+    private fun parseSettingEntries(setting: String): List<SettingEntry> {
+        if (setting.isBlank()) return emptyList()
+
+        val parts = setting.split(',')
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+
+        val entries = ArrayList<SettingEntry>(parts.size)
+        for (p in parts) {
+            val idx = p.indexOf(':')
+            if (idx <= 0 || idx >= p.length - 1) continue
+            val key = p.substring(0, idx).trim()
+            val value = p.substring(idx + 1).trim()
+            if (key.isNotBlank() && value.isNotBlank()) entries += SettingEntry(key, value)
+        }
+        return entries
     }
 }

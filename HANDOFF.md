@@ -155,7 +155,7 @@ APK 输出：
 
 2) Settings 结构化覆盖不完全
 - NovelAI/Fooocus 已有 `settingEntries` + `settingDetail`
-- SwarmUI/ComfyUI/A1111 仍主要产出 `setting` 字符串
+- SwarmUI/ComfyUI/A1111 已补齐 `settingEntries` + `settingDetail`（并保持 Simple/Normal 语义一致）
 - 建议统一：所有 parser 输出结构化 entries + detail
 
 3) 识别规则仍需样本驱动
@@ -173,8 +173,8 @@ APK 输出：
 ## 7. 推荐下一步（按优先级）
 
 P0（对齐与稳定性）
-- 为 SwarmUI/ComfyUI/A1111 补齐：`settingEntries` + `settingDetail`
-- 新增“解析单元测试/fixtures”：用 Python 参考实现批量导出 JSON 作为 goldens，然后 Android 端对齐 diff
+- 已为 SwarmUI/ComfyUI/A1111 补齐：`settingEntries` + `settingDetail`
+- 已新增解析 fixtures + 单元测试（`prompt-reader-android/app/src/test/...`）；后续可再对齐 Python goldens 做 diff
 
 P1（交付体验）
 - 增加 GitHub Release（签名/版本号）或 CI（GitHub Actions）自动产出 APK

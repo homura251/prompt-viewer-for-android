@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "last_node_id": 5,
+  "nodes": [
+    {
+      "id": 1,
+      "type": "CheckpointLoaderSimple"
+    },
+    {
+      "id": 4,
+      "type": "KSampler"
+    }
+  ]
+}

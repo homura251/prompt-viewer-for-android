@@ -1,0 +1,3 @@
+a cute cat, best quality
+Negative prompt: blurry, lowres
+Steps: 28, Sampler: Euler a, CFG scale: 5.5, Seed: 123456789, Size: 512x768, Model: sdxl.safetensors

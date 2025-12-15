@@ -44,7 +44,15 @@ object PromptReader {
         // SwarmUI in PNG: parameters contains sui_image_params
         if (!parameters.isNullOrBlank() && parameters.contains("sui_image_params")) {
             val r = SwarmUiParser.parse(parameters)
-            return PromptParseResult(tool = "StableSwarmUI", positive = r.positive, negative = r.negative, setting = r.setting, raw = r.raw)
+            return PromptParseResult(
+                tool = "StableSwarmUI",
+                positive = r.positive,
+                negative = r.negative,
+                setting = r.setting,
+                raw = r.raw,
+                settingEntries = r.settingEntries,
+                settingDetail = r.settingDetail,
+            )
         }
 
         // NovelAI legacy (must run before Fooocus; NovelAI Comment is also JSON)
@@ -78,14 +86,30 @@ object PromptReader {
         // ComfyUI
         if (!prompt.isNullOrBlank()) {
             val r = ComfyUiParser.parse(promptJsonText = prompt, workflowText = workflow)
-            return PromptParseResult(tool = r.tool, positive = r.positive, negative = r.negative, setting = r.setting, raw = r.raw)
+            return PromptParseResult(
+                tool = r.tool,
+                positive = r.positive,
+                negative = r.negative,
+                setting = r.setting,
+                raw = r.raw,
+                settingEntries = r.settingEntries,
+                settingDetail = r.settingDetail,
+            )
         }
 
         // A1111
         if (!parameters.isNullOrBlank()) {
             val r = A1111Parser.parse(parameters)
             val tool = if (textMap.containsKey("prompt")) "ComfyUI (A1111 compatible)" else "A1111 webUI"
-            return PromptParseResult(tool = tool, positive = r.positive, negative = r.negative, setting = r.setting, raw = r.raw)
+            return PromptParseResult(
+                tool = tool,
+                positive = r.positive,
+                negative = r.negative,
+                setting = r.setting,
+                raw = r.raw,
+                settingEntries = r.settingEntries,
+                settingDetail = r.settingDetail,
+            )
         }
 
         // NovelAI stealth: decode bitmap and try
@@ -127,7 +151,15 @@ object PromptReader {
         // SwarmUI in JPEG: user comment contains sui_image_params JSON
         if (!userComment.isNullOrBlank() && userComment.contains("sui_image_params")) {
             val r = SwarmUiParser.parse(userComment)
-            return PromptParseResult(tool = "StableSwarmUI", positive = r.positive, negative = r.negative, setting = r.setting, raw = r.raw)
+            return PromptParseResult(
+                tool = "StableSwarmUI",
+                positive = r.positive,
+                negative = r.negative,
+                setting = r.setting,
+                raw = r.raw,
+                settingEntries = r.settingEntries,
+                settingDetail = r.settingDetail,
+            )
         }
 
         // Fooocus: some variants store JSON in comment/usercomment
@@ -147,7 +179,15 @@ object PromptReader {
         // A1111 / EasyDiffusion: usercomment often contains the full text
         if (!userComment.isNullOrBlank()) {
             val r = A1111Parser.parse(userComment)
-            return PromptParseResult(tool = "A1111 webUI", positive = r.positive, negative = r.negative, setting = r.setting, raw = r.raw)
+            return PromptParseResult(
+                tool = "A1111 webUI",
+                positive = r.positive,
+                negative = r.negative,
+                setting = r.setting,
+                raw = r.raw,
+                settingEntries = r.settingEntries,
+                settingDetail = r.settingDetail,
+            )
         }
 
         // NovelAI stealth may exist in WEBP: try decode
