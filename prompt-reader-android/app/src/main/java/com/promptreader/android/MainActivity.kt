@@ -13,6 +13,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,6 +22,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -28,6 +31,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -37,10 +41,13 @@ import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Lightbulb
 import androidx.compose.material.icons.filled.LightMode
+import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.SettingsBrightness
 import androidx.compose.material.icons.outlined.Lightbulb
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
@@ -48,7 +55,10 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Shapes
+import androidx.compose.material3.Surface
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.darkColorScheme
@@ -73,6 +83,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
@@ -96,25 +107,30 @@ class MainActivity : ComponentActivity() {
         setContent {
             val ctx = LocalContext.current
             val prefs = remember { ThemePrefs(this@MainActivity) }
-            var themeMode by remember { mutableStateOf(prefs.load()) }
-            val dynamic = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+            var themeMode by remember { mutableStateOf(prefs.loadThemeMode()) }
+            var palette by remember { mutableStateOf(prefs.loadPalette()) }
+            val dynamicAvailable = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
             val systemDark = androidx.compose.foundation.isSystemInDarkTheme()
-            val colorScheme = when (themeMode) {
-                ThemeMode.Dark -> if (dynamic) dynamicDarkColorScheme(ctx) else darkColorScheme()
-                ThemeMode.Light -> if (dynamic) dynamicLightColorScheme(ctx) else lightColorScheme()
-                ThemeMode.System -> if (systemDark) {
-                    if (dynamic) dynamicDarkColorScheme(ctx) else darkColorScheme()
-                } else {
-                    if (dynamic) dynamicLightColorScheme(ctx) else lightColorScheme()
+            val isDark = when (themeMode) {
+                ThemeMode.Dark -> true
+                ThemeMode.Light -> false
+                ThemeMode.System -> systemDark
+            }
+            val colorScheme = when {
+                palette == ColorPalette.Dynamic && dynamicAvailable -> {
+                    if (isDark) dynamicDarkColorScheme(ctx) else dynamicLightColorScheme(ctx)
                 }
+
+                isDark -> palette.darkScheme()
+                else -> palette.lightScheme()
             }
             val shapes = remember {
                 Shapes(
                     extraSmall = RoundedCornerShape(12.dp),
                     small = RoundedCornerShape(16.dp),
-                    medium = RoundedCornerShape(20.dp),
-                    large = RoundedCornerShape(24.dp),
-                    extraLarge = RoundedCornerShape(28.dp),
+                    medium = RoundedCornerShape(24.dp),
+                    large = RoundedCornerShape(28.dp),
+                    extraLarge = RoundedCornerShape(32.dp),
                 )
             }
             MaterialTheme(colorScheme = colorScheme, shapes = shapes) {
@@ -231,9 +247,16 @@ class MainActivity : ComponentActivity() {
                     themeMode = themeMode,
                     onThemeModeChange = {
                         themeMode = it
-                        prefs.save(it)
+                        prefs.saveThemeMode(it)
                         appScope.launch { snackbarHostState.showSnackbar("主题：${it.label}") }
                     },
+                    palette = palette,
+                    onPaletteChange = {
+                        palette = it
+                        prefs.savePalette(it)
+                        appScope.launch { snackbarHostState.showSnackbar("配色：${it.label}") }
+                    },
+                    dynamicAvailable = dynamicAvailable,
                     snackbarHostState = snackbarHostState,
                 )
             }
@@ -252,16 +275,157 @@ private enum class ThemeMode(val label: String) {
     Dark("深色"),
 }
 
+private enum class ColorPalette(val label: String) {
+    Dynamic("动态（Material You）"),
+    Blue("海盐蓝"),
+    Purple("雾紫"),
+    Green("薄荷绿"),
+    Orange("暖橙"),
+}
+
+private fun ColorPalette.lightScheme(): ColorScheme {
+    return when (this) {
+        ColorPalette.Dynamic -> lightColorScheme()
+        ColorPalette.Blue -> lightColorScheme(
+            primary = Color(0xFF2157FF),
+            onPrimary = Color(0xFFFFFFFF),
+            primaryContainer = Color(0xFFDDE5FF),
+            onPrimaryContainer = Color(0xFF00174A),
+            secondary = Color(0xFF3F5AA9),
+            onSecondary = Color(0xFFFFFFFF),
+            secondaryContainer = Color(0xFFDAE2FF),
+            onSecondaryContainer = Color(0xFF00184B),
+            tertiary = Color(0xFF006A6A),
+            onTertiary = Color(0xFFFFFFFF),
+            tertiaryContainer = Color(0xFF9CF1F0),
+            onTertiaryContainer = Color(0xFF002020),
+        )
+        ColorPalette.Purple -> lightColorScheme(
+            primary = Color(0xFF6C4DFF),
+            onPrimary = Color(0xFFFFFFFF),
+            primaryContainer = Color(0xFFE8DDFF),
+            onPrimaryContainer = Color(0xFF1F0061),
+            secondary = Color(0xFF6750A4),
+            onSecondary = Color(0xFFFFFFFF),
+            secondaryContainer = Color(0xFFEADDFF),
+            onSecondaryContainer = Color(0xFF21005D),
+            tertiary = Color(0xFF8B4A9F),
+            onTertiary = Color(0xFFFFFFFF),
+            tertiaryContainer = Color(0xFFFFD7FF),
+            onTertiaryContainer = Color(0xFF32003C),
+        )
+        ColorPalette.Green -> lightColorScheme(
+            primary = Color(0xFF1B6D3A),
+            onPrimary = Color(0xFFFFFFFF),
+            primaryContainer = Color(0xFFA6F2BF),
+            onPrimaryContainer = Color(0xFF00210F),
+            secondary = Color(0xFF4D6354),
+            onSecondary = Color(0xFFFFFFFF),
+            secondaryContainer = Color(0xFFCFE9D5),
+            onSecondaryContainer = Color(0xFF0A1F13),
+            tertiary = Color(0xFF006C51),
+            onTertiary = Color(0xFFFFFFFF),
+            tertiaryContainer = Color(0xFF7EF8CF),
+            onTertiaryContainer = Color(0xFF002116),
+        )
+        ColorPalette.Orange -> lightColorScheme(
+            primary = Color(0xFF9C4500),
+            onPrimary = Color(0xFFFFFFFF),
+            primaryContainer = Color(0xFFFFDBC8),
+            onPrimaryContainer = Color(0xFF321300),
+            secondary = Color(0xFF775A4A),
+            onSecondary = Color(0xFFFFFFFF),
+            secondaryContainer = Color(0xFFFFDBC8),
+            onSecondaryContainer = Color(0xFF2C160A),
+            tertiary = Color(0xFF5E6300),
+            onTertiary = Color(0xFFFFFFFF),
+            tertiaryContainer = Color(0xFFE3EA7B),
+            onTertiaryContainer = Color(0xFF1B1D00),
+        )
+    }
+}
+
+private fun ColorPalette.darkScheme(): ColorScheme {
+    return when (this) {
+        ColorPalette.Dynamic -> darkColorScheme()
+        ColorPalette.Blue -> darkColorScheme(
+            primary = Color(0xFFB6C4FF),
+            onPrimary = Color(0xFF002A78),
+            primaryContainer = Color(0xFF003DB0),
+            onPrimaryContainer = Color(0xFFDDE5FF),
+            secondary = Color(0xFFB4C5FF),
+            onSecondary = Color(0xFF112C79),
+            secondaryContainer = Color(0xFF2A4290),
+            onSecondaryContainer = Color(0xFFDAE2FF),
+            tertiary = Color(0xFF7DD5D4),
+            onTertiary = Color(0xFF003737),
+            tertiaryContainer = Color(0xFF004F4F),
+            onTertiaryContainer = Color(0xFF9CF1F0),
+        )
+        ColorPalette.Purple -> darkColorScheme(
+            primary = Color(0xFFD0BCFF),
+            onPrimary = Color(0xFF381E72),
+            primaryContainer = Color(0xFF4F378B),
+            onPrimaryContainer = Color(0xFFEADDFF),
+            secondary = Color(0xFFCCC2DC),
+            onSecondary = Color(0xFF332D41),
+            secondaryContainer = Color(0xFF4A4458),
+            onSecondaryContainer = Color(0xFFE8DEF8),
+            tertiary = Color(0xFFEFB8C8),
+            onTertiary = Color(0xFF492532),
+            tertiaryContainer = Color(0xFF633B48),
+            onTertiaryContainer = Color(0xFFFFD8E4),
+        )
+        ColorPalette.Green -> darkColorScheme(
+            primary = Color(0xFF8BDDA5),
+            onPrimary = Color(0xFF00391C),
+            primaryContainer = Color(0xFF00522A),
+            onPrimaryContainer = Color(0xFFA6F2BF),
+            secondary = Color(0xFFB3CCB8),
+            onSecondary = Color(0xFF1F3526),
+            secondaryContainer = Color(0xFF354B3B),
+            onSecondaryContainer = Color(0xFFCFE9D5),
+            tertiary = Color(0xFF5DDBB3),
+            onTertiary = Color(0xFF003828),
+            tertiaryContainer = Color(0xFF00513C),
+            onTertiaryContainer = Color(0xFF7EF8CF),
+        )
+        ColorPalette.Orange -> darkColorScheme(
+            primary = Color(0xFFFFB68B),
+            onPrimary = Color(0xFF542100),
+            primaryContainer = Color(0xFF773200),
+            onPrimaryContainer = Color(0xFFFFDBC8),
+            secondary = Color(0xFFE6BEAA),
+            onSecondary = Color(0xFF442A1C),
+            secondaryContainer = Color(0xFF5D4030),
+            onSecondaryContainer = Color(0xFFFFDBC8),
+            tertiary = Color(0xFFC6CE61),
+            onTertiary = Color(0xFF303200),
+            tertiaryContainer = Color(0xFF454900),
+            onTertiaryContainer = Color(0xFFE3EA7B),
+        )
+    }
+}
+
 private class ThemePrefs(context: Context) {
     private val prefs = context.getSharedPreferences("prompt_reader_prefs", Context.MODE_PRIVATE)
 
-    fun load(): ThemeMode {
+    fun loadThemeMode(): ThemeMode {
         val v = prefs.getString("theme_mode", ThemeMode.System.name) ?: ThemeMode.System.name
         return runCatching { ThemeMode.valueOf(v) }.getOrDefault(ThemeMode.System)
     }
 
-    fun save(mode: ThemeMode) {
+    fun saveThemeMode(mode: ThemeMode) {
         prefs.edit().putString("theme_mode", mode.name).apply()
+    }
+
+    fun loadPalette(): ColorPalette {
+        val v = prefs.getString("color_palette", ColorPalette.Dynamic.name) ?: ColorPalette.Dynamic.name
+        return runCatching { ColorPalette.valueOf(v) }.getOrDefault(ColorPalette.Dynamic)
+    }
+
+    fun savePalette(palette: ColorPalette) {
+        prefs.edit().putString("color_palette", palette.name).apply()
     }
 }
 
@@ -294,6 +458,9 @@ private fun PromptReaderScreen(
     onCopy: suspend (String, String) -> Unit,
     themeMode: ThemeMode,
     onThemeModeChange: (ThemeMode) -> Unit,
+    palette: ColorPalette,
+    onPaletteChange: (ColorPalette) -> Unit,
+    dynamicAvailable: Boolean,
     snackbarHostState: SnackbarHostState,
 ) {
     val scrollState = rememberScrollState()
@@ -303,6 +470,27 @@ private fun PromptReaderScreen(
     var positiveMode by remember { mutableStateOf(ViewMode.Normal) }
     var negativeMode by remember { mutableStateOf(ViewMode.Normal) }
     var paramsMode by remember { mutableStateOf(ViewMode.Simple) }
+    var showPaletteDialog by remember { mutableStateOf(false) }
+
+    val systemDark = androidx.compose.foundation.isSystemInDarkTheme()
+    val isDark = when (themeMode) {
+        ThemeMode.Dark -> true
+        ThemeMode.Light -> false
+        ThemeMode.System -> systemDark
+    }
+
+    if (showPaletteDialog) {
+        PalettePickerDialog(
+            current = palette,
+            isDark = isDark,
+            dynamicAvailable = dynamicAvailable,
+            onSelect = {
+                onPaletteChange(it)
+                showPaletteDialog = false
+            },
+            onDismiss = { showPaletteDialog = false },
+        )
+    }
 
     Scaffold(
         topBar = {
@@ -338,6 +526,9 @@ private fun PromptReaderScreen(
                             ThemeMode.Dark -> Icons.Filled.DarkMode
                         }
                         Icon(icon, contentDescription = "主题")
+                    }
+                    IconButton(onClick = { showPaletteDialog = true }) {
+                        Icon(Icons.Filled.Palette, contentDescription = "配色")
                     }
                     IconButton(onClick = onPickImage) {
                         Icon(Icons.Filled.Image, contentDescription = "选择图片")
@@ -967,4 +1158,80 @@ private fun PromptTokenList(text: String) {
             headlineContent = { Text(token) },
         )
     }
+}
+
+@androidx.compose.runtime.Composable
+private fun PalettePickerDialog(
+    current: ColorPalette,
+    isDark: Boolean,
+    dynamicAvailable: Boolean,
+    onSelect: (ColorPalette) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("选择配色") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                ColorPalette.entries.forEach { palette ->
+                    val enabled = palette != ColorPalette.Dynamic || dynamicAvailable
+                    val scheme = if (isDark) palette.darkScheme() else palette.lightScheme()
+                    val selected = palette == current
+                    val bg = if (selected) scheme.primaryContainer.copy(alpha = 0.35f) else Color.Transparent
+                    val alpha = if (enabled) 1f else 0.45f
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(MaterialTheme.shapes.large)
+                            .background(bg)
+                            .clickable(enabled = enabled) { onSelect(palette) }
+                            .padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        RadioButton(
+                            selected = selected,
+                            onClick = null,
+                            enabled = enabled,
+                        )
+
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = palette.label,
+                                style = MaterialTheme.typography.titleSmall,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = alpha),
+                            )
+                            if (palette == ColorPalette.Dynamic && !dynamicAvailable) {
+                                Text(
+                                    text = "Android 12+ 才支持动态配色",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = alpha),
+                                )
+                            }
+                        }
+
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            ColorSwatch(color = scheme.primary, alpha = alpha)
+                            ColorSwatch(color = scheme.secondary, alpha = alpha)
+                            ColorSwatch(color = scheme.tertiary, alpha = alpha)
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("关闭") }
+        },
+    )
+}
+
+@androidx.compose.runtime.Composable
+private fun ColorSwatch(color: Color, alpha: Float) {
+    Surface(
+        modifier = Modifier.size(16.dp),
+        shape = CircleShape,
+        color = color.copy(alpha = alpha),
+        content = {},
+    )
 }
