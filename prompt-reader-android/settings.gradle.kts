@@ -13,5 +13,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "prompt-viewer-android"
+rootProject.name = "prompt-reader-android"
 include(":app")
