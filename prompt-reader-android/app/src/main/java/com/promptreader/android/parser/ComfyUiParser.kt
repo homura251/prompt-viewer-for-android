@@ -33,7 +33,7 @@ object ComfyUiParser {
         val workflow = (runCatching { JSONTokener(normalized).nextValue() }.getOrNull() as? JSONObject) ?: JSONObject()
         val nodes = workflow.optJSONArray("nodes") ?: JSONArray()
 
-        val extracted = extractFromWorkflowNodes(nodes)
+        val extracted = extractFromWorkflowObject(workflow)
         val model = extractModelFromWorkflowNodes(nodes)
         val entries = buildWorkflowSettingEntries(extracted.settingText, model)
         val setting = buildSettingFromEntries(entries)
@@ -180,13 +180,15 @@ object ComfyUiParser {
         val normalized = normalizeWorkflowText(workflowText)
         val workflow = runCatching { JSONTokener(normalized).nextValue() }.getOrNull() as? JSONObject
             ?: return WorkflowExtract("", "", "", null)
-        val nodes = workflow.optJSONArray("nodes") ?: return WorkflowExtract("", "", "", null)
-        val extracted = extractFromWorkflowNodes(nodes)
-        val model = extractModelFromWorkflowNodes(nodes)
-        return extracted.copy(modelFromWorkflow = model)
+        val extracted = extractFromWorkflowObject(workflow)
+        val nodes = workflow.optJSONArray("nodes")
+        val model = if (nodes != null) extractModelFromWorkflowNodes(nodes) else null
+        return extracted.copy(modelFromWorkflow = model ?: extracted.modelFromWorkflow)
     }
 
-    private fun extractFromWorkflowNodes(nodes: JSONArray): WorkflowExtract {
+    private fun extractFromWorkflowObject(workflow: JSONObject): WorkflowExtract {
+        val nodes = workflow.optJSONArray("nodes") ?: return WorkflowExtract("", "", "", null)
+
         // Prefer SDPromptReader (comfyui-prompt-reader-node), which already aggregates POSITIVE/NEGATIVE/SETTINGS.
         for (i in 0 until nodes.length()) {
             val node = nodes.optJSONObject(i) ?: continue
@@ -198,7 +200,252 @@ object ComfyUiParser {
             val settingText = widgets.optString(5, "").trim()
             return WorkflowExtract(positive, negative, settingText, null)
         }
-        return WorkflowExtract("", "", "", null)
+
+        // Next: try to traverse the workflow graph (nodes + links) and find CLIP text nodes connected to a sampler.
+        val links = workflow.optJSONArray("links") ?: JSONArray()
+        val graphExtract = extractFromWorkflowGraph(nodes, links)
+        if (graphExtract.positive.isNotBlank() || graphExtract.negative.isNotBlank()) return graphExtract
+
+        // Fallback: best-effort scan for CLIPTextEncode nodes even without links.
+        val scanned = extractFromWorkflowTextNodes(nodes)
+        return scanned
+    }
+
+    private data class WorkflowLink(
+        val id: Int,
+        val fromNodeId: String,
+        val toNodeId: String,
+    )
+
+    private class WorkflowTraverseContext(
+        private val nodesById: Map<String, JSONObject>,
+        private val linkById: Map<Int, WorkflowLink>,
+    ) {
+        val visited = LinkedHashSet<String>()
+        var positive: String = ""
+        var negative: String = ""
+
+        fun traverse(nodeId: String) {
+            if (!visited.add(nodeId)) return
+            val node = nodesById[nodeId] ?: return
+
+            val type = node.optString("type", "")
+
+            when {
+                // Follow image chain from SaveImage-like end nodes.
+                SAVE_IMAGE_TYPES.contains(type) -> {
+                    findUpstreamByInputName(nodeId, "images")?.let(::traverse)
+                    findUpstreamByInputName(nodeId, "image")?.let(::traverse)
+                }
+
+                // KSampler-like nodes contain the conditioning links we need.
+                KSAMPLER_TYPES.contains(type) || hasInputs(node, setOf("positive", "negative")) -> {
+                    findUpstreamByInputName(nodeId, "positive")?.let { upstream ->
+                        val text = traverseToText(upstream)
+                        if (!text.isNullOrBlank()) positive = text
+                    }
+                    findUpstreamByInputName(nodeId, "negative")?.let { upstream ->
+                        val text = traverseToText(upstream)
+                        if (!text.isNullOrBlank()) negative = text
+                    }
+
+                    // Also traverse upstream for model/settings.
+                    findUpstreamByInputName(nodeId, "model")?.let(::traverse)
+                    findUpstreamByInputName(nodeId, "samples")?.let(::traverse)
+                    findUpstreamByInputName(nodeId, "latent_image")?.let(::traverse)
+                }
+
+                else -> {
+                    // Generic pass-through: follow common upstream links first, then any linked input.
+                    val preferred = listOf(
+                        "conditioning",
+                        "conditioning_1",
+                        "conditioning_2",
+                        "clip",
+                        "model",
+                        "samples",
+                        "image",
+                        "images",
+                        "latent",
+                        "latent_image",
+                    )
+                    for (name in preferred) {
+                        findUpstreamByInputName(nodeId, name)?.let {
+                            traverse(it)
+                            return
+                        }
+                    }
+
+                    val inputs = node.optJSONArray("inputs") ?: return
+                    for (i in 0 until inputs.length()) {
+                        val input = inputs.optJSONObject(i) ?: continue
+                        val linkId = input.optInt("link", -1)
+                        if (linkId < 0) continue
+                        val upstream = linkById[linkId]?.fromNodeId ?: continue
+                        traverse(upstream)
+                        return
+                    }
+                }
+            }
+        }
+
+        private fun hasInputs(node: JSONObject, names: Set<String>): Boolean {
+            val inputs = node.optJSONArray("inputs") ?: return false
+            val found = HashSet<String>()
+            for (i in 0 until inputs.length()) {
+                val input = inputs.optJSONObject(i) ?: continue
+                val name = input.optString("name", "")
+                if (name.isNotBlank()) found += name.lowercase()
+            }
+            return names.all { it.lowercase() in found }
+        }
+
+        private fun findUpstreamByInputName(nodeId: String, inputName: String): String? {
+            val node = nodesById[nodeId] ?: return null
+            val inputs = node.optJSONArray("inputs") ?: return null
+            for (i in 0 until inputs.length()) {
+                val input = inputs.optJSONObject(i) ?: continue
+                if (!inputName.equals(input.optString("name", ""), ignoreCase = true)) continue
+                val linkId = input.optInt("link", -1)
+                if (linkId < 0) return null
+                return linkById[linkId]?.fromNodeId
+            }
+            return null
+        }
+
+        private fun traverseToText(nodeId: String, depth: Int = 0): String? {
+            if (depth > 50) return null
+            traverse(nodeId)
+            val node = nodesById[nodeId] ?: return null
+
+            val type = node.optString("type", "")
+            val widgets = node.optJSONArray("widgets_values")
+
+            if (CLIP_TEXT_TYPES.contains(type)) {
+                // In workflow JSON, CLIPTextEncode nodes typically store the prompt text in widgets_values[0].
+                val s = widgets?.optString(0, "")?.trim().orEmpty()
+                if (s.isNotBlank()) return s
+            }
+
+            // Heuristic: many custom nodes store prompt text directly in widgets_values; use the longest string.
+            val candidate = findLongestString(widgets)
+            if (!candidate.isNullOrBlank()) return candidate
+
+            // Follow conditioning links if present.
+            val upstreamCandidates = listOf("conditioning", "conditioning_1", "conditioning_2", "text", "prompt", "positive")
+            for (name in upstreamCandidates) {
+                findUpstreamByInputName(nodeId, name)?.let { upstream ->
+                    val t = traverseToText(upstream, depth + 1)
+                    if (!t.isNullOrBlank()) return t
+                }
+            }
+
+            // Otherwise follow any link.
+            val inputs = node.optJSONArray("inputs") ?: return null
+            for (i in 0 until inputs.length()) {
+                val input = inputs.optJSONObject(i) ?: continue
+                val linkId = input.optInt("link", -1)
+                if (linkId < 0) continue
+                val upstream = linkById[linkId]?.fromNodeId ?: continue
+                val t = traverseToText(upstream, depth + 1)
+                if (!t.isNullOrBlank()) return t
+            }
+
+            return null
+        }
+
+        private fun findLongestString(arr: JSONArray?): String? {
+            if (arr == null) return null
+            var best: String? = null
+            for (i in 0 until arr.length()) {
+                val v = arr.opt(i)
+                if (v !is String) continue
+                val s = v.trim()
+                if (s.isBlank()) continue
+                if (best == null || s.length > best!!.length) best = s
+            }
+            return best
+        }
+    }
+
+    private fun extractFromWorkflowGraph(nodes: JSONArray, links: JSONArray): WorkflowExtract {
+        val nodesById = LinkedHashMap<String, JSONObject>()
+        for (i in 0 until nodes.length()) {
+            val node = nodes.optJSONObject(i) ?: continue
+            val id = node.opt("id")?.toString()?.trim().orEmpty()
+            if (id.isNotBlank()) nodesById[id] = node
+        }
+
+        val linkById = LinkedHashMap<Int, WorkflowLink>()
+        for (i in 0 until links.length()) {
+            val link = links.optJSONArray(i) ?: continue
+            val id = link.optInt(0, -1)
+            val from = link.opt(1)?.toString()?.trim().orEmpty()
+            val to = link.opt(3)?.toString()?.trim().orEmpty()
+            if (id >= 0 && from.isNotBlank() && to.isNotBlank()) {
+                linkById[id] = WorkflowLink(id, fromNodeId = from, toNodeId = to)
+            }
+        }
+
+        // Candidate sampler nodes: real KSampler types, or nodes with positive/negative inputs.
+        val candidates = ArrayList<String>()
+        for ((id, node) in nodesById) {
+            val type = node.optString("type", "")
+            val inputs = node.optJSONArray("inputs")
+            val hasPosNeg = inputs != null && run {
+                var hasP = false
+                var hasN = false
+                for (j in 0 until inputs.length()) {
+                    val inp = inputs.optJSONObject(j) ?: continue
+                    val name = inp.optString("name", "")
+                    if (name.equals("positive", ignoreCase = true)) hasP = true
+                    if (name.equals("negative", ignoreCase = true)) hasN = true
+                }
+                hasP && hasN
+            }
+            if (KSAMPLER_TYPES.contains(type) || hasPosNeg || type.contains("ksampler", ignoreCase = true)) {
+                candidates += id
+            }
+        }
+
+        var best: WorkflowTraverseContext? = null
+        for (id in candidates) {
+            val ctx = WorkflowTraverseContext(nodesById, linkById)
+            ctx.traverse(id)
+            if (best == null || ctx.visited.size > best!!.visited.size) best = ctx
+        }
+
+        val ctx = best ?: return WorkflowExtract("", "", "", null)
+        return WorkflowExtract(
+            positive = ctx.positive.trim(),
+            negative = ctx.negative.trim(),
+            settingText = "",
+            modelFromWorkflow = null,
+        )
+    }
+
+    private fun extractFromWorkflowTextNodes(nodes: JSONArray): WorkflowExtract {
+        val positives = ArrayList<String>()
+        val negatives = ArrayList<String>()
+
+        for (i in 0 until nodes.length()) {
+            val node = nodes.optJSONObject(i) ?: continue
+            val type = node.optString("type", "")
+            if (!CLIP_TEXT_TYPES.contains(type) && !type.contains("prompt", ignoreCase = true)) continue
+
+            val widgets = node.optJSONArray("widgets_values") ?: continue
+            val s = widgets.optString(0, "").trim()
+            if (s.isBlank()) continue
+
+            val title = node.optString("title", "")
+            val lowered = (title + " " + type).lowercase()
+            val isNeg = lowered.contains("negative") || lowered.contains("neg") || lowered.contains("负")
+            if (isNeg) negatives += s else positives += s
+        }
+
+        val positive = positives.maxByOrNull { it.length }.orEmpty()
+        val negative = negatives.maxByOrNull { it.length }.orEmpty()
+        return WorkflowExtract(positive, negative, "", null)
     }
 
     private fun mergeSettingEntries(primary: List<SettingEntry>, secondary: List<SettingEntry>): List<SettingEntry> {
@@ -468,21 +715,25 @@ object ComfyUiParser {
             val inputs = node.optJSONObject("inputs") ?: JSONObject()
 
             return when (classType) {
-                "CLIPTextEncode" -> {
-                    val text = inputs.opt("text")
-                    when (text) {
-                        is String -> text
-                        else -> {
-                            val upstream = firstLink(text)
-                            if (upstream != null) traverseToText(upstream) else null
+                in CLIP_TEXT_TYPES -> {
+                    val parts = LinkedHashSet<String>()
+                    val candidates = listOf(inputs.opt("text"), inputs.opt("text_g"), inputs.opt("text_l"))
+                    for (c in candidates) {
+                        when (c) {
+                            is String -> parts += c
+                            else -> {
+                                val upstream = firstLink(c)
+                                if (upstream != null) traverseToText(upstream)?.let { parts += it }
+                            }
                         }
                     }
+                    parts.map { it.trim() }.filter { it.isNotBlank() }.joinToString("\n").takeIf { it.isNotBlank() }
                 }
 
                 else -> {
                     // Many custom nodes output a string into CLIPTextEncode via a link; follow heuristically.
                     // If current node has a string-y input named positive/text/etc, use it.
-                    val candidates = listOf("text", "positive", "prompt", "string")
+                    val candidates = listOf("text", "text_g", "text_l", "positive", "prompt", "string")
                     for (k in candidates) {
                         val v = inputs.opt(k)
                         if (v is String) return v

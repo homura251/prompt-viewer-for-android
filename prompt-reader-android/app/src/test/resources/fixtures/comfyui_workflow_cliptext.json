@@ -1,0 +1,38 @@
+{
+  "id": "wf-cliptext",
+  "revision": 0,
+  "nodes": [
+    {
+      "id": 1,
+      "type": "KSampler",
+      "inputs": [
+        { "name": "positive", "link": 1 },
+        { "name": "negative", "link": 2 },
+        { "name": "model", "link": 3 }
+      ],
+      "widgets_values": [123456789, 28, 5.5, "k_dpmpp_2m", "normal", 1]
+    },
+    {
+      "id": 2,
+      "type": "CLIPTextEncodeSDXL",
+      "widgets_values": ["a cute cat, best quality"]
+    },
+    {
+      "id": 3,
+      "type": "CLIPTextEncode",
+      "title": "negative",
+      "widgets_values": ["blurry, lowres"]
+    },
+    {
+      "id": 4,
+      "type": "CheckpointLoaderSimple",
+      "widgets_values": ["sdxl.safetensors"]
+    }
+  ],
+  "links": [
+    [1, 2, 0, 1, 0, "CONDITIONING"],
+    [2, 3, 0, 1, 1, "CONDITIONING"],
+    [3, 4, 0, 1, 2, "MODEL"]
+  ]
+}
+

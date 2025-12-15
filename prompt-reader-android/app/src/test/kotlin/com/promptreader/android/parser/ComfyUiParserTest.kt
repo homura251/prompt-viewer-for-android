@@ -48,4 +48,29 @@ class ComfyUiParserTest {
         val detail = JSONObject(r.settingDetail)
         assertTrue(detail.has("workflow_meta"))
     }
+
+    @Test
+    fun `extracts SDXL clip text from prompt graph`() {
+        val prompt = Fixtures.read("fixtures/comfyui_prompt_sdxl.json")
+        val r = ComfyUiParser.parse(promptJsonText = prompt)
+
+        assertEquals("a cute cat, best quality", r.positive)
+        assertEquals("blurry, lowres", r.negative)
+
+        val map = r.settingEntries.associate { it.key to it.value }
+        assertEquals("sdxl.safetensors", map["Model"])
+        assertEquals("28", map["Steps"])
+        assertEquals("k_dpmpp_2m", map["Sampler"])
+        assertEquals("5.5", map["CFG scale"])
+        assertEquals("123456789", map["Seed"])
+    }
+
+    @Test
+    fun `parses workflow without SDPromptReader via links`() {
+        val workflow = Fixtures.read("fixtures/comfyui_workflow_cliptext.json")
+        val r = ComfyUiParser.parseWorkflow(workflowText = workflow)
+
+        assertEquals("a cute cat, best quality", r.positive)
+        assertEquals("blurry, lowres", r.negative)
+    }
 }

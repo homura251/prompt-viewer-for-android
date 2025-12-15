@@ -1,0 +1,36 @@
+{
+  "1": {
+    "class_type": "KSampler",
+    "inputs": {
+      "seed": 123456789,
+      "steps": 28,
+      "cfg": 5.5,
+      "sampler_name": "k_dpmpp_2m",
+      "scheduler": "normal",
+      "denoise": 1,
+      "model": ["2", 0],
+      "positive": ["10", 0],
+      "negative": ["11", 0]
+    }
+  },
+  "2": {
+    "class_type": "CheckpointLoaderSimple",
+    "inputs": {
+      "ckpt_name": "sdxl.safetensors"
+    }
+  },
+  "10": {
+    "class_type": "CLIPTextEncodeSDXL",
+    "inputs": {
+      "text_g": "a cute cat, best quality",
+      "text_l": "a cute cat, best quality"
+    }
+  },
+  "11": {
+    "class_type": "CLIPTextEncodeSDXLRefiner",
+    "inputs": {
+      "text": "blurry, lowres"
+    }
+  }
+}
+
