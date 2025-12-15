@@ -86,15 +86,23 @@ object ComfyUiParser {
             positive = ctx.positive
             negative = ctx.negative
         }
-        if ((!workflowText.isNullOrBlank()) && (positive.isBlank() || negative.isBlank())) {
-            val extracted = extractFromWorkflow(workflowText)
-            if (positive.isBlank() && extracted.positive.isNotBlank()) positive = extracted.positive
-            if (negative.isBlank() && extracted.negative.isNotBlank()) negative = extracted.negative
+
+        val workflowFallback = if (!workflowText.isNullOrBlank()) extractFromWorkflow(workflowText) else null
+        if (workflowFallback != null && (positive.isBlank() || negative.isBlank())) {
+            if (positive.isBlank() && workflowFallback.positive.isNotBlank()) positive = workflowFallback.positive
+            if (negative.isBlank() && workflowFallback.negative.isNotBlank()) negative = workflowFallback.negative
         }
         val modelName = extractModelName(promptObj, bestVisited, ctx.flow, workflowText)
-        val settingEntries = buildSettingEntries(ctx.flow, width, height, modelName)
+        var settingEntries = buildSettingEntries(ctx.flow, width, height, modelName)
+        if (workflowFallback != null) {
+            val workflowEntries = buildWorkflowSettingEntries(
+                settingText = workflowFallback.settingText,
+                model = workflowFallback.modelFromWorkflow ?: modelName,
+            )
+            settingEntries = mergeSettingEntries(settingEntries, workflowEntries)
+        }
         setting = buildSettingFromEntries(settingEntries)
-        val settingDetail = buildSettingDetail(ctx.flow, width, height, modelName)
+        val settingDetail = buildSettingDetail(ctx.flow, settingEntries)
 
         val rawParts = mutableListOf<String>()
         if (positive.isNotBlank()) rawParts += positive.trim()
@@ -136,24 +144,10 @@ object ComfyUiParser {
 
     private fun buildSettingDetail(
         flow: Map<String, Any?>,
-        width: Int?,
-        height: Int?,
-        modelName: String?,
+        entries: List<SettingEntry>,
     ): String {
         val detail = JSONObject()
-
-        val model = normalizeString(modelName ?: flow["ckpt_name"])
-        val steps = normalizeString(flow["steps"])
-        val sampler = normalizeString(flow["sampler_name"])
-        val cfg = normalizeString(flow["cfg"])
-        val seed = normalizeString(flow["seed"] ?: flow["noise_seed"])
-
-        if (model != null) detail.put("Model", model)
-        if (steps != null) detail.put("Steps", steps)
-        if (sampler != null) detail.put("Sampler", sampler)
-        if (cfg != null) detail.put("CFG scale", cfg)
-        if (seed != null) detail.put("Seed", seed)
-        if (width != null && height != null) detail.put("Size", "${width}x${height}")
+        for (e in entries) detail.put(e.key, e.value)
 
         val flowJson = JSONObject()
         for ((k, v) in flow) {
@@ -178,12 +172,16 @@ object ComfyUiParser {
         val positive: String,
         val negative: String,
         val settingText: String,
+        val modelFromWorkflow: String?,
     )
 
     private fun extractFromWorkflow(workflowText: String): WorkflowExtract {
-        val workflow = runCatching { JSONTokener(workflowText).nextValue() }.getOrNull() as? JSONObject ?: return WorkflowExtract("", "", "")
-        val nodes = workflow.optJSONArray("nodes") ?: return WorkflowExtract("", "", "")
-        return extractFromWorkflowNodes(nodes)
+        val workflow = runCatching { JSONTokener(workflowText).nextValue() }.getOrNull() as? JSONObject
+            ?: return WorkflowExtract("", "", "", null)
+        val nodes = workflow.optJSONArray("nodes") ?: return WorkflowExtract("", "", "", null)
+        val extracted = extractFromWorkflowNodes(nodes)
+        val model = extractModelFromWorkflowNodes(nodes)
+        return extracted.copy(modelFromWorkflow = model)
     }
 
     private fun extractFromWorkflowNodes(nodes: JSONArray): WorkflowExtract {
@@ -196,9 +194,24 @@ object ComfyUiParser {
             val positive = widgets.optString(3, "").trim()
             val negative = widgets.optString(4, "").trim()
             val settingText = widgets.optString(5, "").trim()
-            return WorkflowExtract(positive, negative, settingText)
+            return WorkflowExtract(positive, negative, settingText, null)
         }
-        return WorkflowExtract("", "", "")
+        return WorkflowExtract("", "", "", null)
+    }
+
+    private fun mergeSettingEntries(primary: List<SettingEntry>, secondary: List<SettingEntry>): List<SettingEntry> {
+        if (primary.isEmpty()) return secondary
+        if (secondary.isEmpty()) return primary
+        val seen = primary.map { it.key.trim().lowercase() }.toHashSet()
+        val merged = ArrayList<SettingEntry>(primary.size + secondary.size)
+        merged += primary
+        for (e in secondary) {
+            val k = e.key.trim().lowercase()
+            if (k in seen) continue
+            seen += k
+            merged += e
+        }
+        return merged
     }
 
     private fun extractModelFromWorkflowNodes(nodes: JSONArray): String? {

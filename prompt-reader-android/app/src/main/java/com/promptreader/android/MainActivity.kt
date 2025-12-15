@@ -492,7 +492,7 @@ private fun PromptReaderScreen(
                         }
 
                         else -> {
-                            PromptTextBox(title = title, text = raw, tall = true, maxDisplayChars = 200_000)
+                            PromptTextBox(title = title, text = raw, tall = true, maxDisplayChars = 50_000)
                         }
                     }
                 }
