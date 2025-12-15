@@ -1,0 +1,62 @@
+name: Android Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - name: Generate release keystore
+        working-directory: prompt-reader-android
+        shell: bash
+        run: |
+          set -euo pipefail
+          STORE_PASS="$(openssl rand -hex 16)"
+          KEY_PASS="$(openssl rand -hex 16)"
+          ALIAS="release"
+
+          keytool -genkeypair -v \
+            -storetype JKS \
+            -keystore release.jks \
+            -storepass "$STORE_PASS" \
+            -keypass "$KEY_PASS" \
+            -alias "$ALIAS" \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -dname "CN=Prompt Reader,O=Prompt Reader,C=US"
+
+          cat > keystore.properties <<EOF
+          storeFile=release.jks
+          storePassword=$STORE_PASS
+          keyAlias=$ALIAS
+          keyPassword=$KEY_PASS
+          EOF
+
+      - name: Build release artifacts
+        working-directory: prompt-reader-android
+        run: ./gradlew :app:assembleRelease :app:bundleRelease --no-daemon
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            prompt-reader-android/app/build/outputs/apk/release/app-release.apk
+            prompt-reader-android/app/build/outputs/bundle/release/app-release.aab

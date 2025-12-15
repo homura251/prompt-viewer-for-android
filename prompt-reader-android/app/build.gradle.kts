@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application") version "8.7.3"
     id("org.jetbrains.kotlin.android") version "2.0.21"
@@ -12,15 +14,51 @@ android {
         applicationId = "com.promptreader.android"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1"
+        versionCode = 2
+        versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    val signingProps = Properties().also { props ->
+        val file = rootProject.file("keystore.properties")
+        if (file.exists()) file.inputStream().use(props::load)
+    }
+
+    fun signingProp(vararg names: String): String? {
+        for (name in names) {
+            val v = signingProps.getProperty(name) ?: System.getenv(name)
+            if (!v.isNullOrBlank()) return v
+        }
+        return null
+    }
+
+    val signingStoreFile = signingProp("SIGNING_STORE_FILE", "storeFile")
+    val signingStorePassword = signingProp("SIGNING_STORE_PASSWORD", "storePassword")
+    val signingKeyAlias = signingProp("SIGNING_KEY_ALIAS", "keyAlias")
+    val signingKeyPassword = signingProp("SIGNING_KEY_PASSWORD", "keyPassword")
+    val hasReleaseSigning = !signingStoreFile.isNullOrBlank() &&
+        !signingStorePassword.isNullOrBlank() &&
+        !signingKeyAlias.isNullOrBlank() &&
+        !signingKeyPassword.isNullOrBlank()
+
+    if (hasReleaseSigning) {
+        signingConfigs {
+            create("release") {
+                storeFile = rootProject.file(signingStoreFile!!)
+                storePassword = signingStorePassword
+                keyAlias = signingKeyAlias
+                keyPassword = signingKeyPassword
+            }
+        }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
+            if (hasReleaseSigning) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",

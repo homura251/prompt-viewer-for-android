@@ -27,12 +27,16 @@ comfyui-workflow-prompt-viewer/whl/
 # Local SDK config (machine-specific)
 prompt-reader-android/local.properties
 
+# Signing (do not commit)
+prompt-reader-android/keystore.properties
+prompt-reader-android/**/*.jks
+prompt-reader-android/**/*.keystore
+
 # Logs
 **/*.log
 
 # Local test images
-*.png
-*.jpg
-*.jpeg
-*.webp
-
+/*.png
+/*.jpg
+/*.jpeg
+/*.webp
