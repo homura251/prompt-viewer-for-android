@@ -22,6 +22,20 @@ jobs:
           java-version: "17"
           cache: gradle
 
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install SDK packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          yes | sdkmanager --licenses >/dev/null
+          sdkmanager "platforms;android-35" "build-tools;35.0.1" "platform-tools"
+
+      - name: Make Gradle wrapper executable
+        shell: bash
+        run: chmod +x prompt-reader-android/gradlew
+
       - name: Generate release keystore
         working-directory: prompt-reader-android
         shell: bash
