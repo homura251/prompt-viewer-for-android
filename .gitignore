@@ -31,6 +31,7 @@ prompt-reader-android/local.properties
 prompt-reader-android/keystore.properties
 prompt-reader-android/**/*.jks
 prompt-reader-android/**/*.keystore
+prompt-reader-android/*.base64.txt
 
 # Logs
 **/*.log

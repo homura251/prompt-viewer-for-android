@@ -1,9 +1,9 @@
-$ErrorActionPreference = 'Stop'
-
 param(
   [string]$KeystorePath = "$(Join-Path $PSScriptRoot '..\\release.jks')",
   [string]$Alias = "release"
 )
+
+$ErrorActionPreference = 'Stop'
 
 $KeystorePath = (Resolve-Path $KeystorePath).Path
 
@@ -26,7 +26,7 @@ Write-Host "ANDROID_KEY_PASSWORD = <your key password>"
 Write-Host ""
 
 Write-Host "ANDROID_KEYSTORE_BASE64 (first 120 chars):"
-Write-Host ($b64.Substring(0, [Math]::Min(120, $b64.Length)) + "…")
+Write-Host ($b64.Substring(0, [Math]::Min(120, $b64.Length)) + "...")
 Write-Host ""
 
 Write-Host "Full base64 written to: $KeystorePath.base64.txt"

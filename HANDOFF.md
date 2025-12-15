@@ -188,7 +188,7 @@ Release signing (important for upgrades)
   - `ANDROID_KEY_ALIAS`
   - `ANDROID_KEY_PASSWORD`
 - Local signing: create `prompt-reader-android/keystore.properties` from `prompt-reader-android/keystore.properties.example` (never commit it).
-- Backup: keep `prompt-reader-android/release.jks` + passwords in a secure backup (password manager + offline copy); you can use `prompt-reader-android/tools/export-keystore-secrets.ps1` to generate base64 for Secrets.
+- Backup: keep `prompt-reader-android/release.jks` + passwords in a secure backup (password manager + offline copy); use `prompt-reader-android/tools/export-keystore-secrets.cmd` (double-click) or run `powershell -NoProfile -ExecutionPolicy Bypass -File .\\prompt-reader-android\\tools\\export-keystore-secrets.ps1` to generate base64 for Secrets.
 
 P2（功能扩展）
 - 批量选择/批量导出 JSON
