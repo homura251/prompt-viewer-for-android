@@ -72,7 +72,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.promptreader.android.parser.PromptReader
 import com.promptreader.android.parser.RawPart
+import com.promptreader.android.parser.ParseEvidence
 import com.promptreader.android.parser.SettingEntry
+import com.promptreader.android.parser.buildCombinedRaw
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -99,6 +101,7 @@ class MainActivity : ComponentActivity() {
                 var settingDetail by remember { mutableStateOf("") }
                 var settingEntries by remember { mutableStateOf<List<SettingEntry>>(emptyList()) }
                 var detectionPath by remember { mutableStateOf("") }
+                var detectionEvidence by remember { mutableStateOf<List<ParseEvidence>>(emptyList()) }
                 var raw by remember { mutableStateOf("") }
                 var rawParts by remember { mutableStateOf<List<RawPart>>(emptyList()) }
                 var error by remember { mutableStateOf<String?>(null) }
@@ -125,6 +128,7 @@ class MainActivity : ComponentActivity() {
                     negative = ""
                     setting = ""
                     detectionPath = ""
+                    detectionEvidence = emptyList()
                     raw = ""
                     tool = ""
                     isLoading = true
@@ -161,6 +165,7 @@ class MainActivity : ComponentActivity() {
                             settingDetail = it.settingDetail
                             settingEntries = it.settingEntries
                             detectionPath = it.detectionPath
+                            detectionEvidence = it.detectionEvidence
                             raw = it.raw
                             rawParts = it.rawParts
                         },
@@ -191,6 +196,7 @@ class MainActivity : ComponentActivity() {
                     settingDetail = settingDetail,
                     settingEntries = settingEntries,
                     detectionPath = detectionPath,
+                    detectionEvidence = detectionEvidence,
                     raw = raw,
                     rawParts = rawParts,
                     tabIndex = tabIndex,
@@ -254,6 +260,7 @@ private fun PromptReaderScreen(
     settingDetail: String,
     settingEntries: List<SettingEntry>,
     detectionPath: String,
+    detectionEvidence: List<ParseEvidence>,
     raw: String,
     rawParts: List<RawPart>,
     tabIndex: Int,
@@ -411,6 +418,24 @@ private fun PromptReaderScreen(
                                     }
                                 },
                             )
+                        }
+                        if (detectionEvidence.isNotEmpty()) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 6.dp),
+                                verticalArrangement = Arrangement.spacedBy(2.dp),
+                            ) {
+                                detectionEvidence.forEach { step ->
+                                    Text(
+                                        text = "${step.stage}: ${step.detail}",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
+                            }
                         }
                     } else {
                         if (selectedUri != null) {
@@ -710,15 +735,6 @@ private fun RawViewer(
                 }
             }
         }
-    }
-}
-
-private fun buildCombinedRaw(raw: String, rawParts: List<RawPart>): String {
-    if (rawParts.isEmpty()) return raw
-    return rawParts.joinToString("\n\n") { part ->
-        val header = "### ${part.title}".trim()
-        val body = part.text.trim()
-        if (body.isBlank()) header else "$header\n$body"
     }
 }
 
